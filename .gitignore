@@ -1,0 +1,93 @@
+############################
+# BUILD / DEPENDÊNCIAS
+############################
+
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+pom.xml
+release.properties
+
+# Arquivos de dependência baixados
+dependency-reduced-pom.xml
+
+# Gradle (se um dia usar)
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+############################
+# IDEs
+############################
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+out/
+
+# Eclipse
+.project
+.classpath
+.settings/
+.bin/
+
+# VS Code
+.vscode/
+
+############################
+# LOGS / TEMP
+############################
+
+logs/
+*.log
+*.log.*
+hs_err_pid*
+replay_pid*
+
+# Arquivos temporários
+*.tmp
+*.swp
+*.swo
+
+############################
+# SISTEMA OPERACIONAL
+############################
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+############################
+# CONFIG LOCAL / SEGREDOS
+############################
+
+# Variáveis de ambiente
+.env
+*.env
+
+# Arquivos de configuração apenas locais
+application-local.yml
+application-local.yaml
+application-local.properties
+
+# Se você criar configs específicas por ambiente, ignore só as locais:
+# application-*.local.yml
+application-*.local.yml
+application-*.local.yaml
+application-*.local.properties
+application.properties
+application-dev.yml
+application.yml
