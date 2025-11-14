@@ -14,10 +14,6 @@ public class UrlNormalizer {
         }
     }
 
-    /**
-     * Normaliza URLs simples (sem JS/redirect real): força host em minúsculas
-     * e remove fragmentos. Se não for URL válida, trata como texto.
-     */
     public static Result normalize(String rawInput) {
         try {
             URI uri = new URI(rawInput.trim());

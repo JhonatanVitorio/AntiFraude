@@ -5,6 +5,15 @@ import org.springframework.stereotype.Service;
 
 import java.util.Locale;
 
+/**
+ * Implementação do serviço de Threat Intelligence.
+ *
+ * Este serviço combina:
+ * Um client de VirusTotal (stub {@link VirusTotalClient})
+ *
+ * O objetivo é fornecer uma reputação inicial para a URL:
+ * MALICIOUS, CLEAN ou UNKNOWN.
+ */
 @Service
 public class ThreatIntelServiceImpl implements ThreatIntelService {
 
@@ -17,6 +26,13 @@ public class ThreatIntelServiceImpl implements ThreatIntelService {
         this.virusTotalClient = virusTotalClient;
     }
 
+    /**
+     * Executa o pipeline de Threat Intelligence para uma URL.
+     *
+     * @param normalizedUrl URL normalizada
+     * @param domain        domínio extraído
+     * @return {@link Result} com reputação, hits e evidências
+     */
     @Override
     public Result check(String normalizedUrl, String domain) {
         Result result = new Result();
@@ -24,7 +40,7 @@ public class ThreatIntelServiceImpl implements ThreatIntelService {
         String url = normalizedUrl.toLowerCase(Locale.ROOT);
         String host = domain.toLowerCase(Locale.ROOT);
 
-        // 1) Tenta usar VirusTotal primeiro (stub)
+        // 1) Tenta usar VirusTotal primeiro (stub inteligente)
         VirusTotalClient.VirusTotalResult vt = virusTotalClient.checkUrl(url);
         if (vt.reputation != Reputation.UNKNOWN) {
             result.setReputation(vt.reputation);
@@ -40,6 +56,10 @@ public class ThreatIntelServiceImpl implements ThreatIntelService {
         return fallbackLocalHeuristics(url, host, result);
     }
 
+    /**
+     * Heurísticas locais complementares ao VirusTotal.
+     * Aqui identificamos domínios parecidos com oficiais e padrões suspeitos.
+     */
     private Result fallbackLocalHeuristics(String url, String host, Result result) {
         // Domínios falsos parecidos com Caixa / Receita / WhatsApp
         if (isFakeCaixa(host)) {
@@ -87,6 +107,8 @@ public class ThreatIntelServiceImpl implements ThreatIntelService {
         return result;
     }
 
+    // ---------- Heurísticas auxiliares ----------
+
     private boolean isFakeCaixa(String host) {
         return (host.contains("caix") || host.contains("caixa"))
                 && !host.endsWith(CAIXA_DOMAIN);
@@ -115,6 +137,9 @@ public class ThreatIntelServiceImpl implements ThreatIntelService {
                 || host.endsWith("magazineluiza.com.br");
     }
 
+    /**
+     * Marca o resultado como MALICIOUS e adiciona hit + evidência.
+     */
     private Result malicious(Result result, String hit, String evidence) {
         result.setReputation(Reputation.MALICIOUS);
         result.addHit(hit);
@@ -124,11 +149,14 @@ public class ThreatIntelServiceImpl implements ThreatIntelService {
 
     /**
      * Client do VirusTotal fica como classe interna da implementação.
-     * Aqui está com um stub inteligente pra teste.
+     * Aqui está com um stub inteligente para testes, sem chamada real à API.
      */
     @Component
     public static class VirusTotalClient {
 
+        /**
+         * Resultado simplificado de uma consulta ao VirusTotal (stub).
+         */
         public static class VirusTotalResult {
             public final Reputation reputation;
             public final int malicious;
@@ -149,6 +177,9 @@ public class ThreatIntelServiceImpl implements ThreatIntelService {
                 this.evidence = evidence;
             }
 
+            /**
+             * Fábrica para resultado UNKNOWN (sem dados relevantes).
+             */
             public static VirusTotalResult unknown() {
                 return new VirusTotalResult(
                         Reputation.UNKNOWN,
@@ -159,10 +190,16 @@ public class ThreatIntelServiceImpl implements ThreatIntelService {
             }
         }
 
+        /**
+         * Aplica uma heurística simples.
+         *
+         * @param normalizedUrl URL já normalizada
+         * @return {@link VirusTotalResult} com reputação e contadores sintéticos
+         */
         public VirusTotalResult checkUrl(String normalizedUrl) {
             String url = normalizedUrl.toLowerCase();
 
-            // 🟥 Padrões fortes de golpe (incluindo os que você citou)
+            // Padrões fortes de golpe (incluindo os que foram mapeados nos testes)
             if (url.contains("valoresareceber")
                     || url.contains("valores-a-receber")
                     || url.contains("fgts")
@@ -181,10 +218,11 @@ public class ThreatIntelServiceImpl implements ThreatIntelService {
                         10,
                         5,
                         0,
-                        "Stub VT: URL bate com padrões típicos de golpe (valores a receber / FGTS / Caixa / Receita / WhatsApp / IRPF / PIX / encurtador / banking secure).");
+                        "Stub VT: URL bate com padrões típicos de golpe "
+                                + "(valores a receber / FGTS / Caixa / Receita / WhatsApp / IRPF / PIX / encurtador / banking secure).");
             }
 
-            // demais casos: UNKNOWN
+            // Demais casos: consideramos UNKNOWN
             return VirusTotalResult.unknown();
         }
     }

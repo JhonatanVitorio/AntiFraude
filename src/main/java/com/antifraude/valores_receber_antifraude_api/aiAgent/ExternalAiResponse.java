@@ -1,8 +1,6 @@
 package com.antifraude.valores_receber_antifraude_api.aiAgent;
 
-/**
- * DTO de resposta da IA externa.
- */
+
 public class ExternalAiResponse {
 
     private Double riskScore; // 0.0 a 1.0

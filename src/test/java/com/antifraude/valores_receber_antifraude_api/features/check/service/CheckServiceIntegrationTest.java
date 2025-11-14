@@ -75,7 +75,6 @@ class CheckServiceIntegrationTest {
         assertEquals(Verdict.SUSPECT, record.getLastStatus());
         assertEquals(resp.getScore(), record.getLastScore());
 
-        // entrada na blacklist
         List<BlacklistEntry> blacks = blacklistRepository.findAll();
         assertEquals(1, blacks.size(), "Deveria ter 1 entrada na blacklist após URL suspeita");
 
@@ -87,7 +86,6 @@ class CheckServiceIntegrationTest {
 
     @Test
     void deveClassificarLegit_eSalvarEmUrlRecordEWhitelist() {
-        // URL considerada legítima pelas heurísticas/ThreatIntel/IA
         String urlLegit = "https://www.caixa.gov.br";
 
         CheckRequest req = new CheckRequest();

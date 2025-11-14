@@ -22,6 +22,18 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Serviço de orquestração do pipeline de verificação de URLs.
+ *
+ * Responsável por:
+ * Normalizar a URL
+ * Consultar Whitelist / Blacklist
+ * Consultar cache de histórico (UrlRecord)
+ * Executar o motor de regras ({@link RulesEngine})
+ * Chamar ThreatIntel + IA via {@link AiAgentService}
+ * Persistir o histórico e alimentar blacklist/whitelist
+ * automaticamente
+ */
 @Service
 public class CheckService {
 
@@ -50,12 +62,12 @@ public class CheckService {
     /**
      * Pipeline principal de verificação:
      *
-     * 1) Normalização da URL
-     * 2) Whitelist
-     * 3) Blacklist
-     * 4) Cache (histórico) – se quiser, pode desativar
-     * 5) Motor de regras
-     * 6) IA + Threat Intel
+     * Normalização da URL
+     * Whitelist (curto-circuito)
+     * Blacklist (curto-circuito)
+     * Cache (UrlRecord, se já analisamos essa URL)
+     * Motor de Regras local
+     * IA + ThreatIntel (VirusTotal + heurísticas + LLM)
      */
     @Transactional
     public CheckResponse submit(CheckRequest request) {
@@ -76,29 +88,35 @@ public class CheckService {
         }
 
         // 4) CACHE (já temos histórico dessa URL?)
-        // Se você quiser manter desativado pra testes, pode comentar esse bloco:
+        // Se quiser desativar cache em algum momento, basta comentar este bloco.
         CheckResponse cacheDecision = handleCache(norm);
         if (cacheDecision != null) {
             return cacheDecision;
         }
 
-        // 5) Motor de regras local
+        // 5) Motor de regras local (heurísticas estáticas)
         CheckResponse rulesDecision = handleRules(norm);
         if (rulesDecision != null) {
             return rulesDecision;
         }
 
-        // 6) IA + Threat Intel (VirusTotal + LLM) – só se RULES não decidiram
+        // 6) IA + Threat Intel (VirusTotal + LLM) – chamado apenas se RULES não decidiu
         return handleAi(norm);
     }
 
+    // ---------- Etapas do pipeline ----------
+
+    /**
+     * Passo de Whitelist: se a URL/domínio bater com uma regra da whitelist,
+     * já retorna LEGIT e não segue para as próximas etapas.
+     */
     private CheckResponse handleWhitelist(UrlNormalizer.Result norm) {
         var white = listsService.matchWhitelist(norm.normalizedUrl, norm.domain);
         if (!white.hit) {
             return null;
         }
 
-        UrlRecord rec = upsertRecord(norm, Verdict.LEGIT, 10); // score baixo
+        UrlRecord rec = upsertRecord(norm, Verdict.LEGIT, 10); // score baixo para URLs confiáveis
         return buildResp(
                 rec,
                 "LIST",
@@ -106,13 +124,17 @@ public class CheckService {
                 List.of("Whitelist: " + white.matchedValue));
     }
 
+    /**
+     * Passo de Blacklist: se a URL/domínio bater com uma regra da blacklist,
+     * retorna SUSPECT imediatamente.
+     */
     private CheckResponse handleBlacklist(UrlNormalizer.Result norm) {
         var black = listsService.matchBlacklist(norm.normalizedUrl, norm.domain);
         if (!black.hit) {
             return null;
         }
 
-        UrlRecord rec = upsertRecord(norm, Verdict.SUSPECT, 90); // score alto
+        UrlRecord rec = upsertRecord(norm, Verdict.SUSPECT, 90); // score alto para URLs bloqueadas
         return buildResp(
                 rec,
                 "LIST",
@@ -120,6 +142,10 @@ public class CheckService {
                 List.of("Blacklist: " + black.matchedValue));
     }
 
+    /**
+     * Passo de cache: verifica se já temos histórico para essa URL
+     * em {@link UrlRecord}. Caso sim, devolve o último veredito.
+     */
     private CheckResponse handleCache(UrlNormalizer.Result norm) {
         var existingOpt = urlRecordRepository.findByNormalizedUrl(norm.normalizedUrl);
         if (existingOpt.isEmpty()) {
@@ -134,9 +160,15 @@ public class CheckService {
                 List.of("Registro prévio no banco"));
     }
 
+    /**
+     * Passo de motor de regras local.
+     * Se o motor decidir SUSPECT ou LEGIT, além de retornar o veredito,
+     * alimenta também blacklist/whitelist automaticamente.
+     */
     private CheckResponse handleRules(UrlNormalizer.Result norm) {
         var ruleResult = rulesEngine.evaluate(norm.normalizedUrl, norm.domain);
         if (ruleResult.verdict == Verdict.UNKNOWN) {
+            // Se o motor de regras ficou em dúvida, seguimos o pipeline
             return null;
         }
 
@@ -158,6 +190,14 @@ public class CheckService {
                 ruleResult.evidence);
     }
 
+    /**
+     * Passo de IA + ThreatIntel.
+     * Esse passo só roda se:
+     * URL não estava em whitelist
+     * URL não estava em blacklist
+     * URL não estava em cache
+     * Motor de regras não decidiu
+     */
     private CheckResponse handleAi(UrlNormalizer.Result norm) {
         AiAgentService.Result iaResult = aiAgentService.classify(
                 norm.normalizedUrl,
@@ -187,8 +227,11 @@ public class CheckService {
         return buildResp(rec, iaResult.source, hits, evidence);
     }
 
+    // ---------- Persistência e helpers ----------
+
     /**
      * Cria ou atualiza o registro de URL (histórico).
+     * Sempre mantém o último veredito, score e data de visualização.
      */
     private UrlRecord upsertRecord(UrlNormalizer.Result norm, Verdict verdict, int score) {
         var recOpt = urlRecordRepository.findByNormalizedUrl(norm.normalizedUrl);
@@ -204,7 +247,7 @@ public class CheckService {
     }
 
     /**
-     * Monta o DTO de resposta para a API.
+     * Monta o DTO de resposta exposto pela API.
      */
     private CheckResponse buildResp(UrlRecord rec, String source, List<String> hits, List<String> evidence) {
         CheckResponse resp = new CheckResponse();
@@ -220,6 +263,9 @@ public class CheckService {
         return resp;
     }
 
+    /**
+     * Adiciona uma entrada de URL na blacklist.
+     */
     private void addToBlacklist(String url, String reason) {
         BlacklistEntry entry = new BlacklistEntry();
         entry.setType(ListEntryType.URL);
@@ -229,6 +275,9 @@ public class CheckService {
         blacklistRepository.save(entry);
     }
 
+    /**
+     * Adiciona uma entrada de URL na whitelist.
+     */
     private void addToWhitelist(String url, String reason) {
         WhitelistEntry entry = new WhitelistEntry();
         entry.setType(ListEntryType.URL);

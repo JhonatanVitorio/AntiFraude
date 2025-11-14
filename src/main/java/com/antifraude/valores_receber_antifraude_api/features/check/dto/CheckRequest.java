@@ -13,7 +13,6 @@ public class CheckRequest {
     @NotBlank
     private String rawInput;
 
-    // livre para o front mandar origem ("email", "form", etc.)
     private Map<String, Object> metadata;
 
     public InputType getInputType() {

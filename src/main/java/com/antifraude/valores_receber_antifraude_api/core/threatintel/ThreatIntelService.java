@@ -5,14 +5,10 @@ import java.util.List;
 
 public interface ThreatIntelService {
 
-    /**
-     * Analisa a URL usando Threat Intelligence (VT + heurísticas locais).
-     */
+
     Result check(String normalizedUrl, String domain);
 
-    /**
-     * Enum compacto de reputação.
-     */
+
     enum Reputation {
         MALICIOUS,
         SUSPICIOUS,
@@ -20,9 +16,6 @@ public interface ThreatIntelService {
         UNKNOWN
     }
 
-    /**
-     * Resultado unificado da Threat Intel.
-     */
     final class Result {
 
         private Reputation reputation;
