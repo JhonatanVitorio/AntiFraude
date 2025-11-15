@@ -12,17 +12,14 @@ import java.util.List;
 /**
  * Serviço responsável por orquestrar a decisão final de risco da URL,
  * combinando:
- * <ul>
- * <li>Threat Intelligence (VirusTotal + heurísticas locais)</li>
- * <li>IA externa (LLM) simulada via {@link ExternalAiClient}</li>
- * </ul>
+ * 
+ * Threat Intelligence (VirusTotal + heurísticas locais) 
+ * IA externa (LLM) simulada via {@link ExternalAiClient} 
  *
  * A ideia é:
- * <ol>
- * <li>Tentar decidir apenas com Threat Intel (casos muito limpos ou muito
- * sujos)</li>
- * <li>Se Threat Intel for inconclusivo, pedir uma segunda opinião da IA</li>
- * </ol>
+ * Tentar decidir apenas com Threat Intel (casos muito limpos ou muito
+ * sujos) 
+ * Se Threat Intel for inconclusivo, pedir uma segunda opinião da IA 
  */
 @Service
 public class AiAgentService {
@@ -84,7 +81,7 @@ public class AiAgentService {
         List<String> hits = new ArrayList<>();
         List<String> evidence = new ArrayList<>();
 
-        // 1) Threat Intelligence (VirusTotal + heurísticas locais)
+        // 1) Threat Intelligence 
         ThreatIntelService.Result ti = threatIntelService.check(normalizedUrl, domain);
 
         // Se ThreatIntel já trouxe hits/evidências, agregamos nas listas globais
@@ -171,7 +168,7 @@ public class AiAgentService {
             hits.add("THREAT_INTEL_UNKNOWN");
         }
 
-        // Deixa a IA decidir
+        // Deixa para IA decidir
         return null;
     }
 

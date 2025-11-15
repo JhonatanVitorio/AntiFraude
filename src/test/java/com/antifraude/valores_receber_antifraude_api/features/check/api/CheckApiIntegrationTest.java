@@ -59,7 +59,6 @@ public class CheckApiIntegrationTest {
 
         String json = objectMapper.writeValueAsString(req);
 
-        // chama o endpoint real (ajusta a URL se for diferente no seu controller)
         var mvcResult = mockMvc.perform(post("/api/v1/checks")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json))
@@ -67,7 +66,6 @@ public class CheckApiIntegrationTest {
                 .andExpect(MockMvcResultMatchers.jsonPath("$.verdict", is("SUSPECT")))
                 .andReturn();
 
-        // verifica se a URL foi salva em UrlRecord
         String normalizedUrl = TestDataFactory.SUSPICIOUS_URL;
         Optional<UrlRecord> optRecord = urlRecordRepository.findByNormalizedUrl(normalizedUrl);
         assertTrue(optRecord.isPresent(), "UrlRecord deveria ter sido salvo para URL suspeita");
