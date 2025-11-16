@@ -3,7 +3,6 @@ package com.antifraude.valores_receber_antifraude_api.aiAgent;
 import com.antifraude.valores_receber_antifraude_api.core.model.enums.Verdict;
 import com.antifraude.valores_receber_antifraude_api.core.threatintel.ThreatIntelService;
 import com.antifraude.valores_receber_antifraude_api.core.threatintel.ThreatIntelService.Reputation;
-
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -11,27 +10,16 @@ import java.util.List;
 
 /**
  * Serviço responsável por orquestrar a decisão final de risco da URL,
- * combinando:
- * 
- * Threat Intelligence (VirusTotal + heurísticas locais) 
- * IA externa (LLM) simulada via {@link ExternalAiClient} 
- *
- * A ideia é:
- * Tentar decidir apenas com Threat Intel (casos muito limpos ou muito
- * sujos) 
- * Se Threat Intel for inconclusivo, pedir uma segunda opinião da IA 
+ * combinando ThreatIntel + IA externa (OpenAI).
  */
 @Service
 public class AiAgentService {
 
-    // Pontuações e thresholds para calibrar a decisão final
-    private static final int MALICIOUS_BASE_SCORE = 90; // score mínimo para algo ser bem suspeito
-    private static final int CLEAN_MAX_RULES_SCORE = 30; // se regras forem fracas e TI disser CLEAN, consideramos
-                                                         // legítimo
-    private static final int CLEAN_MIN_SCORE = 10; // score máximo para algo bem limpo
-    private static final int IA_MIN_SUSPECT_SCORE = 75; // score mínimo quando a IA identificar phishing
-    private static final double IA_PHISHING_THRESHOLD = 0.60; // a partir de 60% de risco a IA considera phishing
-    private static final double IA_CLEAN_THRESHOLD = 0.40; // abaixo de 40% de risco a IA considera limpo
+    // Limiar de decisão da IA - mais agressivo para o projeto
+    // Acima de 0.40 já consideramos SUSPECT (melhor errar para o lado da segurança)
+    // Abaixo de 0.20 consideramos LEGIT
+    private static final double RISK_SUSPECT_THRESHOLD = 0.40;
+    private static final double RISK_LEGIT_THRESHOLD = 0.20;
 
     private final ThreatIntelService threatIntelService;
     private final ExternalAiClient externalAiClient;
@@ -44,15 +32,14 @@ public class AiAgentService {
     }
 
     /**
-     * Objeto de retorno do pipeline de IA.
-     * Representa o "veredito unificado" após ThreatIntel + IA.
+     * Objeto de retorno do pipeline de IA (usado pelo CheckService).
      */
     public static class Result {
         public final Verdict verdict; // SUSPECT / LEGIT / UNKNOWN
         public final int score; // 0 a 100
-        public final String source; // "IA" ou "THREAT_INTEL" (quem decidiu)
-        public final List<String> ruleHits; // códigos de regras que dispararam
-        public final List<String> evidence; // evidências textuais
+        public final String source; // "IA" ou "THREAT_INTEL"
+        public final List<String> ruleHits;
+        public final List<String> evidence;
 
         public Result(
                 Verdict verdict,
@@ -69,22 +56,17 @@ public class AiAgentService {
     }
 
     /**
-     * Pipeline principal de classificação da IA.
-     *
-     * @param normalizedUrl  URL normalizada
-     * @param domain         domínio extraído da URL
-     * @param rulesScoreBase score base vindo do motor de regras (se houver)
-     *
-     * @return {@link Result} com veredito, score, fonte e evidências
+     * Pipeline principal:
+     * 1) ThreatIntel (VirusTotal stub + heurísticas)
+     * 2) Se ThreatIntel não decidir, chama IA externa
      */
     public Result classify(String normalizedUrl, String domain, int rulesScoreBase) {
         List<String> hits = new ArrayList<>();
         List<String> evidence = new ArrayList<>();
 
-        // 1) Threat Intelligence 
+        // 1) Threat Intelligence
         ThreatIntelService.Result ti = threatIntelService.check(normalizedUrl, domain);
 
-        // Se ThreatIntel já trouxe hits/evidências, agregamos nas listas globais
         if (ti != null) {
             if (ti.getRuleHits() != null) {
                 hits.addAll(ti.getRuleHits());
@@ -94,44 +76,35 @@ public class AiAgentService {
             }
         }
 
-        // Tenta decidir apenas com Threat Intel
+        // Tenta decidir só com ThreatIntel (malicious muito claro ou clean muito claro)
         Result tiDecision = decideByThreatIntel(ti, rulesScoreBase, hits, evidence);
         if (tiDecision != null) {
-            // Se ThreatIntel for conclusivo (MALICIOUS ou CLEAN em certos cenários),
-            // retornamos diretamente sem chamar IA
             return tiDecision;
         }
 
-        // Se ThreatIntel não foi conclusivo, construímos um resumo de evidências
-        String mainEvidenceSummary = evidence.isEmpty()
+        // 2) ThreatIntel foi inconclusivo → chama IA externa
+        String evidenceSummary = evidence.isEmpty()
                 ? "Sem evidências fortes de Threat Intel."
                 : String.join(" | ", evidence);
 
-        // 2) IA externa (LLM) – chamada somente quando a Threat Intel não decidiu
         ExternalAiResponse aiResp = externalAiClient.classify(
                 normalizedUrl,
                 domain,
                 rulesScoreBase,
-                mainEvidenceSummary);
+                evidenceSummary);
 
-        // Decisão final baseada apenas na IA (mas respeitando o score base das regras)
         return decideByAi(aiResp, rulesScoreBase, hits, evidence);
     }
 
     /**
-     * Decide com base apenas na Threat Intelligence.
-     * Se a reputação for MALICIOUS ou claramente CLEAN (com poucas regras
-     * disparadas),
-     * já devolvemos um veredito final.
-     *
-     * @return Result se ThreatIntel foi conclusivo, ou null se for inconclusivo
-     *         (UNKNOWN)
+     * Decide apenas com ThreatIntel quando possível.
      */
     private Result decideByThreatIntel(
             ThreatIntelService.Result ti,
             int rulesScoreBase,
             List<String> hits,
             List<String> evidence) {
+
         if (ti == null || ti.getReputation() == null) {
             return null;
         }
@@ -139,9 +112,9 @@ public class AiAgentService {
         Reputation rep = ti.getReputation();
         evidence.add("Threat Intel reputação: " + rep.name());
 
-        // Caso 1: reputação claramente maliciosa
+        // Caso 1: reputação claramente maliciosa → SUSPECT direto
         if (rep == Reputation.MALICIOUS) {
-            int score = Math.max(rulesScoreBase, MALICIOUS_BASE_SCORE);
+            int score = Math.max(rulesScoreBase, 85);
             hits.add("THREAT_INTEL_MALICIOUS");
             return new Result(
                     Verdict.SUSPECT,
@@ -151,9 +124,9 @@ public class AiAgentService {
                     evidence);
         }
 
-        // Caso 2: reputação limpa e regras locais não estão muito fortes
-        if (rep == Reputation.CLEAN && rulesScoreBase < CLEAN_MAX_RULES_SCORE) {
-            int score = Math.min(rulesScoreBase, CLEAN_MIN_SCORE);
+        // Caso 2: reputação limpa e score de regras muito baixo → LEGIT
+        if (rep == Reputation.CLEAN && rulesScoreBase <= 10) {
+            int score = Math.min(rulesScoreBase, 15);
             hits.add("THREAT_INTEL_CLEAN");
             return new Result(
                     Verdict.LEGIT,
@@ -163,24 +136,26 @@ public class AiAgentService {
                     evidence);
         }
 
-        // Caso 3: reputação UNKNOWN → não decide, apenas registra
+        // Caso 3: UNKNOWN → apenas loga e deixa a IA decidir
         if (rep == Reputation.UNKNOWN) {
             hits.add("THREAT_INTEL_UNKNOWN");
         }
 
-        // Deixa para IA decidir
-        return null;
+        return null; // deixa para IA
     }
 
+    /**
+     * Decide com base na resposta da IA externa.
+     */
     private Result decideByAi(
             ExternalAiResponse aiResp,
             int rulesScoreBase,
             List<String> hits,
             List<String> evidence) {
-        // Falha na chamada da IA → mantemos UNKNOWN com score das regras
+
         if (aiResp == null) {
-            evidence.add("IA externa indisponível; mantendo UNKNOWN.");
             hits.add("IA_ERROR");
+            evidence.add("IA externa indisponível; mantendo UNKNOWN.");
             return new Result(
                     Verdict.UNKNOWN,
                     rulesScoreBase,
@@ -189,39 +164,43 @@ public class AiAgentService {
                     evidence);
         }
 
-        double riskScore = aiResp.getRiskScore() != null ? aiResp.getRiskScore() : 0.0;
-        boolean phishing = aiResp.getPhishing() != null && aiResp.getPhishing();
+        Double risk = aiResp.getRiskScore();
+        Boolean phishing = aiResp.getPhishing();
+        String explanation = aiResp.getExplanation();
 
-        // Score final é o máximo entre o score das regras e o score de risco da IA
-        int finalScore = (int) Math.round(Math.max(riskScore * 100, rulesScoreBase));
+        double riskScore = (risk != null) ? risk : 0.5;
+        boolean isPhishing = (phishing != null) && phishing;
 
-        if (aiResp.getExplanation() != null && !aiResp.getExplanation().isBlank()) {
-            evidence.add("IA: " + aiResp.getExplanation());
+        int aiScore = (int) Math.round(riskScore * 100.0);
+        int finalScore = Math.max(rulesScoreBase, aiScore);
+
+        if (explanation != null && !explanation.isBlank()) {
+            evidence.add("IA: " + explanation);
         }
 
-        // Caso 1: IA tem alto risco e marca como phishing → SUSPECT
-        if (phishing && riskScore >= IA_PHISHING_THRESHOLD) {
+        // Caso SUSPECT: risco alto ou IA marcando phishing
+        if (isPhishing || riskScore >= RISK_SUSPECT_THRESHOLD) {
             hits.add("IA_PHISHING");
             return new Result(
                     Verdict.SUSPECT,
-                    Math.max(finalScore, IA_MIN_SUSPECT_SCORE),
+                    Math.max(finalScore, 80),
                     "IA",
                     hits,
                     evidence);
         }
 
-        // Caso 2: IA vê risco baixo e não vê phishing → LEGIT
-        if (!phishing && riskScore <= IA_CLEAN_THRESHOLD) {
+        // Caso LEGIT: risco bem baixo e sem phishing
+        if (!isPhishing && riskScore <= RISK_LEGIT_THRESHOLD) {
             hits.add("IA_CLEAN");
             return new Result(
                     Verdict.LEGIT,
-                    finalScore,
+                    Math.min(finalScore, 20),
                     "IA",
                     hits,
                     evidence);
         }
 
-        // Caso 3: IA não tem certeza → UNKNOWN
+        // Caso intermediário: IA não teve confiança suficiente → UNKNOWN
         hits.add("IA_INCONCLUSIVE");
         evidence.add("IA não teve confiança suficiente para classificação final.");
 

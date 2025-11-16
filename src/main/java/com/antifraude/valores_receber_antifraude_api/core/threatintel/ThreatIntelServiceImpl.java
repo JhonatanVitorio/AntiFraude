@@ -37,8 +37,8 @@ public class ThreatIntelServiceImpl implements ThreatIntelService {
     public Result check(String normalizedUrl, String domain) {
         Result result = new Result();
 
-        String url = normalizedUrl.toLowerCase(Locale.ROOT);
-        String host = domain.toLowerCase(Locale.ROOT);
+        String url = normalizedUrl == null ? "" : normalizedUrl.toLowerCase(Locale.ROOT);
+        String host = domain == null ? "" : domain.toLowerCase(Locale.ROOT);
 
         // 1) Tenta usar VirusTotal primeiro (stub inteligente)
         VirusTotalClient.VirusTotalResult vt = virusTotalClient.checkUrl(url);
@@ -61,6 +61,21 @@ public class ThreatIntelServiceImpl implements ThreatIntelService {
      * Aqui identificamos domínios parecidos com oficiais e padrões suspeitos.
      */
     private Result fallbackLocalHeuristics(String url, String host, Result result) {
+        String compact = (url + " " + host).replaceAll("[^a-z0-9]", "");
+
+        // Golpe típico "valores a receber" em contexto de governo/banco
+        if ((compact.contains("valoresareceber")
+                || compact.contains("valoreareceber")
+                || compact.contains("valoresreceber"))
+                && (host.contains("gov") || host.contains("receita") || host.contains("caixa")
+                        || host.contains("bradesco"))
+                && !(host.endsWith("gov.br") || host.endsWith(CAIXA_DOMAIN) || host.endsWith("bb.com.br"))) {
+
+            return malicious(result,
+                    "THREAT_INTEL_VALORES_A_RECEBER",
+                    "Combinação de termos de órgão/banco com 'valores a receber' em domínio não oficial.");
+        }
+
         // Domínios falsos parecidos com Caixa / Receita / WhatsApp
         if (isFakeCaixa(host)) {
             return malicious(result,
@@ -197,6 +212,10 @@ public class ThreatIntelServiceImpl implements ThreatIntelService {
          * @return {@link VirusTotalResult} com reputação e contadores sintéticos
          */
         public VirusTotalResult checkUrl(String normalizedUrl) {
+            if (normalizedUrl == null) {
+                return VirusTotalResult.unknown();
+            }
+
             String url = normalizedUrl.toLowerCase();
 
             // Padrões fortes de golpe (incluindo os que foram mapeados nos testes)

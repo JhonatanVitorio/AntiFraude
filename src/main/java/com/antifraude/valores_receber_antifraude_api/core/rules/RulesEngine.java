@@ -31,11 +31,15 @@ public class RulesEngine {
      * - Somar "pontos de risco" conforme padrões.
      * - Se passar de um limiar alto → SUSPECT.
      * - Se não tiver sinal forte → UNKNOWN (deixa ThreatIntel + IA decidirem).
-     * - Só marcamos LEGIT quando não há nenhuma regra de risco acionada.
+     *
+     * (Decisão de LEGIT fica para Whitelist / ThreatIntel CLEAN / IA.)
      */
     public Result evaluate(String normalizedUrl, String domain) {
         String url = normalizedUrl == null ? "" : normalizedUrl.toLowerCase(Locale.ROOT);
         String host = domain == null ? "" : domain.toLowerCase(Locale.ROOT);
+        // Versão “compacta” para pegar coisas tipo valores-a-receber /
+        // valores_a_receber
+        String compact = url.replaceAll("[^a-z0-9]", "");
 
         int score = 0;
         List<String> hits = new ArrayList<>();
@@ -66,7 +70,7 @@ public class RulesEngine {
 
         // --- Regras de risco alto (podem empurrar para SUSPECT) ---
 
-        // Palavras muito delicadas em contexto financeiro
+        // Palavras muito delicadas em contexto financeiro (no domínio)
         if (host.contains("secure")
                 || host.contains("auth")
                 || host.contains("banking")
@@ -91,24 +95,33 @@ public class RulesEngine {
             evidence.add("Domínio parece encurtador/seguro falso (bit-llly, tinyurl-security, etc.).");
         }
 
+        // Golpe específico de "valores a receber" / FGTS em domínio não oficial
+        if ((compact.contains("valoresareceber")
+                || compact.contains("valoreareceber")
+                || compact.contains("valoresreceber")
+                || compact.contains("fgts"))
+                && !host.endsWith("gov.br")
+                && !host.endsWith("caixa.gov.br")
+                && !host.endsWith("bb.com.br")) {
+
+            score += 80; // empurra fácil acima do threshold
+            hits.add("VALORES_A_RECEBER_PATTERN");
+            evidence.add("Padrão de 'valores a receber/FGTS' encontrado em domínio não oficial.");
+        }
+
         // --- Decisão final baseada no score ---
 
         Verdict verdict;
         int finalScore = Math.min(score, 100);
 
-        // Limiares (ajuste fino do comportamento)
+        // Limite para marcar como SUSPECT
         final int SUSPECT_THRESHOLD = 60;
-        final int LEGIT_MAX_SCORE_FOR_RULES = 0; // se tiver qualquer ponto, deixamos UNKNOWN
 
         if (finalScore >= SUSPECT_THRESHOLD) {
             verdict = Verdict.SUSPECT;
-        } else if (finalScore <= LEGIT_MAX_SCORE_FOR_RULES && hits.isEmpty()) {
-            // Somente consideramos LEGIT quando NENHUMA regra disparou (score 0 e sem
-            // hits).
-            verdict = Verdict.LEGIT;
         } else {
-            // Qualquer caso intermediário fica como UNKNOWN
-            // para permitir que ThreatIntel + IA decidam.
+            // Qualquer caso abaixo do limiar fica como UNKNOWN
+            // para ThreatIntel + IA decidirem.
             verdict = Verdict.UNKNOWN;
         }
 
