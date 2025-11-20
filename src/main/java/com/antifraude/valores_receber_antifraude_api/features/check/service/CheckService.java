@@ -15,6 +15,7 @@ import com.antifraude.valores_receber_antifraude_api.features.check.dto.CheckReq
 import com.antifraude.valores_receber_antifraude_api.features.check.dto.CheckResponse;
 import com.antifraude.valores_receber_antifraude_api.lists.service.ListsService;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,13 +27,12 @@ import java.util.List;
  * Serviço de orquestração do pipeline de verificação de URLs.
  *
  * Responsável por:
- * Normalizar a URL
- * Consultar Whitelist / Blacklist
- * Consultar cache de histórico (UrlRecord)
- * Executar o motor de regras ({@link RulesEngine})
- * Chamar ThreatIntel + IA via {@link AiAgentService}
- * Persistir o histórico e alimentar blacklist/whitelist
- * automaticamente
+ * - Normalizar a URL
+ * - Consultar Whitelist / Blacklist
+ * - Consultar cache de histórico (UrlRecord)
+ * - Executar o motor de regras ({@link RulesEngine})
+ * - Chamar ThreatIntel + IA via {@link AiAgentService}
+ * - Persistir o histórico e alimentar blacklist/whitelist automaticamente
  */
 @Service
 public class CheckService {
@@ -62,12 +62,12 @@ public class CheckService {
     /**
      * Pipeline principal de verificação:
      *
-     * Normalização da URL
-     * Whitelist (curto-circuito)
-     * Blacklist (curto-circuito)
-     * Cache (UrlRecord, se já analisamos essa URL)
-     * Motor de Regras local
-     * IA + ThreatIntel (VirusTotal + heurísticas + LLM)
+     * 1) Normalização da URL
+     * 2) Whitelist (curto-circuito)
+     * 3) Blacklist (curto-circuito)
+     * 4) Cache (UrlRecord, se já analisamos essa URL)
+     * 5) Motor de Regras local
+     * 6) IA + ThreatIntel (VirusTotal + LLM)
      */
     @Transactional
     public CheckResponse submit(CheckRequest request) {
@@ -88,7 +88,6 @@ public class CheckService {
         }
 
         // 4) CACHE (já temos histórico dessa URL?)
-        // Se quiser desativar cache em algum momento, basta comentar este bloco.
         CheckResponse cacheDecision = handleCache(norm);
         if (cacheDecision != null) {
             return cacheDecision;
@@ -100,7 +99,7 @@ public class CheckService {
             return rulesDecision;
         }
 
-        // 6) IA + Threat Intel (VirusTotal + LLM) – chamado apenas se RULES não decidiu
+        // 6) IA + Threat Intel (VirusTotal + LLM)
         return handleAi(norm);
     }
 
@@ -143,8 +142,8 @@ public class CheckService {
     }
 
     /**
-     * Passo de cache: verifica se já temos histórico para essa URL
-     * em {@link UrlRecord}. Caso sim, devolve o último veredito.
+     * Passo de cache: verifica se já temos histórico para essa URL.
+     * Se sim, devolve o último veredito armazenado.
      */
     private CheckResponse handleCache(UrlNormalizer.Result norm) {
         var existingOpt = urlRecordRepository.findByNormalizedUrl(norm.normalizedUrl);
@@ -193,10 +192,10 @@ public class CheckService {
     /**
      * Passo de IA + ThreatIntel.
      * Esse passo só roda se:
-     * URL não estava em whitelist
-     * URL não estava em blacklist
-     * URL não estava em cache
-     * Motor de regras não decidiu
+     * - URL não estava em whitelist
+     * - URL não estava em blacklist
+     * - URL não estava em cache
+     * - Motor de regras não decidiu
      */
     private CheckResponse handleAi(UrlNormalizer.Result norm) {
         AiAgentService.Result iaResult = aiAgentService.classify(
@@ -265,25 +264,35 @@ public class CheckService {
 
     /**
      * Adiciona uma entrada de URL na blacklist.
+     * Se já existir (violação de UNIQUE), ignora silenciosamente.
      */
     private void addToBlacklist(String url, String reason) {
-        BlacklistEntry entry = new BlacklistEntry();
-        entry.setType(ListEntryType.URL);
-        entry.setValue(url);
-        entry.setActive(true);
-        entry.setReason(reason);
-        blacklistRepository.save(entry);
+        try {
+            BlacklistEntry entry = new BlacklistEntry();
+            entry.setType(ListEntryType.URL);
+            entry.setValue(url);
+            entry.setActive(true);
+            entry.setReason(reason);
+            blacklistRepository.save(entry);
+        } catch (DataIntegrityViolationException ex) {
+            // Já existe entry_value igual na blacklist -> ignoramos
+        }
     }
 
     /**
      * Adiciona uma entrada de URL na whitelist.
+     * Se já existir (violação de UNIQUE), ignora silenciosamente.
      */
     private void addToWhitelist(String url, String reason) {
-        WhitelistEntry entry = new WhitelistEntry();
-        entry.setType(ListEntryType.URL);
-        entry.setValue(url);
-        entry.setActive(true);
-        entry.setReason(reason);
-        whitelistRepository.save(entry);
+        try {
+            WhitelistEntry entry = new WhitelistEntry();
+            entry.setType(ListEntryType.URL);
+            entry.setValue(url);
+            entry.setActive(true);
+            entry.setReason(reason);
+            whitelistRepository.save(entry);
+        } catch (DataIntegrityViolationException ex) {
+            // Já existe entry_value igual na whitelist -> ignoramos
+        }
     }
 }
