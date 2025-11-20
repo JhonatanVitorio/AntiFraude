@@ -1,7 +1,9 @@
 <div align="center">
 
-# 🔐 Valores a Receber – Antifraude API  
-### Sistema Inteligente de Detecção de Golpes  
+# 🔐 Valores a Receber – Antifraude API
+
+### Sistema Inteligente de Detecção de Golpes
+
 Java 21 • Spring Boot 3 • IA • Threat Intel • Rules Engine • Testes
 
 ---
@@ -20,10 +22,10 @@ Java 21 • Spring Boot 3 • IA • Threat Intel • Rules Engine • Testes
 
 Esta API analisa URLs suspeitas para identificar possíveis golpes relacionados a **“Valores a Receber”** utilizando:
 
-- 🔹 *Rules Engine*  
-- 🔹 IA semântica simulada (Phishing Detector)  
-- 🔹 *Threat Intelligence*  
-- 🔹 Persistência automática de **Whitelist**, **Blacklist** e **Histórico**  
+- 🔹 *Rules Engine*
+- 🔹 IA Api OpenAi
+- 🔹 *Threat Intelligence*
+- 🔹 Persistência automática de **Whitelist**, **Blacklist** e **Histórico**
 - 🔹 Testes unitários e de integração (MockMvc + Repositórios + Serviços)
 
 ---
@@ -77,6 +79,7 @@ test/
         └── ValoresReceberAntifraudeApiApplicationTests.java  # Teste de contexto
 
 ```
+
 ---
 
 # 🔍 3. Pipeline de Verificação
@@ -100,6 +103,7 @@ Fluxo completo aplicado a toda requisição:
 ## ▶️ POST `/api/v1/checks`
 
 ### 🔸 Requisição:
+
 ```json
 {
   "rawInput": "http://exemplo-site.com",
@@ -123,77 +127,90 @@ Fluxo completo aplicado a toda requisição:
 ```
 
 # 📘 5. Regras Aplicadas (Rules Engine)
+
   ❌ Suspeitas de phishing:
 
-  - Domínio contém "secure", "banking", "confirmacao", "verificador"
-  - Domínios falsos de governo e bancos
-  - Falsos encurtadores como:
-  - bit-llly
-  - tinyurl-security-check
-  - secure-auth-xyz
+- Domínio contém "secure", "banking", "confirmacao", "verificador"
+- Domínios falsos de governo e bancos
+- Falsos encurtadores como:
+- bit-llly
+- tinyurl-security-check
+- secure-auth-xyz
 
 ⚠️ HTTP sem TLS:
-  - URL iniciando com http:// → +25 score
+
+- URL iniciando com http:// → +25 score
 
 ⚠️ Score máximo de regras → 100
-  - Acima de 60 → SUSPECT
+
+- Acima de 60 → SUSPECT
 
 # 🧠 6. IA – Classificação Inteligente
 
 O módulo IA combina heurísticas que simulam:
-  - análise semântica de phishing
-  - reputação
-  - padrão do domínio
-  - falsificação de marca (spoofing)
+
+- análise semântica de phishing
+- reputação
+- padrão do domínio
+- falsificação de marca (spoofing)
 
 Retornos possíveis:
-  - IA_CLEAN
-  - IA_PHISHING
-  - IA_INCONCLUSIVE
-  - IA_ERROR
+
+- IA_CLEAN
+- IA_PHISHING
+- IA_INCONCLUSIVE
+- IA_ERROR
 
 # 🗄️ 7. Persistência Automática
+
 Tabela	              Descrição
+
 - url_record	        - Histórico de verificações
 - blacklist_entry	    - URLs suspeitas detectadas
 - whitelist_entry	    - URLs confiáveis
 
 🔒 Regras de persistência:
-  - LEGIT → Whitelist
-  - SUSPECT → Blacklist
-  - Sempre → UrlRecord
+
+- LEGIT → Whitelist
+- SUSPECT → Blacklist
+- Sempre → UrlRecord
 
 # 🧪 8. Testes
+
 O projeto possui testes profissionais, incluindo:
 
 ✔️ Unitários
-  - RulesEngineTest
-  - ThreatIntelServiceImplTest
-  - AiAgentServiceTest
+
+- RulesEngineTest
+- ThreatIntelServiceImplTest
+- AiAgentServiceTest
 
 ✔️ Integração
-  - CheckServiceIntegrationTest
-  - CheckApiIntegrationTest (MockMvc)
+
+- CheckServiceIntegrationTest
+- CheckApiIntegrationTest (MockMvc)
 
 ✔️ Teste de contexto Spring Boot
-  - ValoresReceberAntifraudeApiApplicationTests
+
+- ValoresReceberAntifraudeApiApplicationTests
 
 ▶️ Rodar testes:
   ---- mvn clean test ----
 
 # 🚀 9. Como Rodar Localmente
+
 ▶️ Clonar:
   git clone https://github.com/seu-repo.git - cd valores-receber-antifraude-api
 
 ▶️ Rodar:
-  mvn spring-boot:run 
+  mvn spring-boot:run
 
 ▶️ Swagger:
   http://localhost:8080/swagger-ui/index.html#/
 
 # 🔮 10. Melhorias Futuras
 
-  - Integração real com VirusTotal / Google Safe Browsing
-  - Aprendizado de máquina real
-  - Webhook para notificar golpes automaticamente
-  - Integração com ElasticSearch para logs e auditoria
+- Integração real com VirusTotal / Google Safe Browsing
+- Aprendizado de máquina real
+- Webhook para notificar golpes automaticamente
+- Integração com ElasticSearch para logs e auditoria
