@@ -155,7 +155,7 @@ const Shell: React.FC<ShellProps> = ({
                         <span
                             className={isDark ? "text-slate-500/80" : "text-slate-600/80"}
                         >
-                            Desenvolvido por Jhonatan - Gabriela - Guilerme - Julia - Leonardo ·{" "}
+                            Desenvolvido por Jhonatan vitorio·{" "}
                             {new Date().getFullYear()}
                         </span>
                     </div>
